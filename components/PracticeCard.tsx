@@ -47,6 +47,9 @@ async function decodePcmAudioData(
   return buffer;
 }
 
+// Module-level cache to store fetched audio data for the session.
+// Key: textToSpeak (string), Value: base64Audio (string)
+const audioCache = new Map<string, string>();
 
 export const PracticeCard: React.FC<PracticeCardProps> = ({
   item,
@@ -79,26 +82,38 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   const playReferenceAudio = async () => {
     if (isFetchingAudio) return;
 
-    // Initialize AudioContext on first user interaction (e.g., a click)
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     const audioContext = audioContextRef.current;
+    
+    // Determine the unique identifier for the audio to be played.
+    const textToSpeak = level === PracticeLevel.Phonemes ? item.speakableText || item.ipa : item.text;
+
+    // Reusable function to decode and play audio from a base64 string.
+    const playAudioFromBase64 = async (base64: string) => {
+        const rawAudioData = decode(base64);
+        const audioBuffer = await decodePcmAudioData(rawAudioData, audioContext);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        source.start();
+    };
 
     setIsFetchingAudio(true);
     try {
-      // For phonemes, use the pre-computed speakable text for speed. For others, use the main text.
-      const textToSpeak = level === PracticeLevel.Phonemes ? item.speakableText || item.ipa : item.text;
-      const base64Audio = await getTextToSpeechAudio(textToSpeak);
-      
-      const rawAudioData = decode(base64Audio);
-      const audioBuffer = await decodePcmAudioData(rawAudioData, audioContext);
-
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      source.start();
-
+      // Check if the audio is already in our cache.
+      if (audioCache.has(textToSpeak)) {
+        const cachedAudio = audioCache.get(textToSpeak)!;
+        await playAudioFromBase64(cachedAudio);
+      } else {
+        // If not cached, fetch it from the API.
+        const base64Audio = await getTextToSpeechAudio(textToSpeak);
+        // Store the newly fetched audio in the cache.
+        audioCache.set(textToSpeak, base64Audio);
+        await playAudioFromBase64(base64Audio);
+      }
     } catch (error) {
       console.error("Error playing reference audio:", error);
       alert('获取示范音频失败，请稍后再试。');
