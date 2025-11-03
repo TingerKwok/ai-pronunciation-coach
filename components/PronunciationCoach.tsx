@@ -45,7 +45,9 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
         }
       } else if (selectedLevel !== PracticeLevel.Phonemes) {
         const data = PRACTICE_DATA[selectedLevel];
-        setSelectedItem((data as PracticeItem[])[0]);
+        if(Array.isArray(data)) {
+          setSelectedItem(data[0]);
+        }
       }
     }
   }, [view, selectedLevel, selectedPhonemeCategory, selectedItem]);
@@ -78,9 +80,12 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
                     setUnlockedPhonemeCategories(prev => [...prev, nextCategory]);
                 }
             } else { // Last phoneme category practiced, unlock next main level
-                const nextLevel = levelOrder[levelOrder.indexOf(PracticeLevel.Phonemes) + 1];
-                if (!unlockedLevels.includes(nextLevel)) {
-                    setUnlockedLevels(prev => [...prev, nextLevel]);
+                const currentMainIndex = levelOrder.indexOf(PracticeLevel.Phonemes);
+                if (currentMainIndex < levelOrder.length - 1) {
+                    const nextLevel = levelOrder[currentMainIndex + 1];
+                     if (!unlockedLevels.includes(nextLevel)) {
+                        setUnlockedLevels(prev => [...prev, nextLevel]);
+                    }
                 }
             }
         } else if (selectedLevel) {
@@ -110,6 +115,18 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
     setScoreResult(null);
     setUserAudio(null);
     setError(null);
+    
+    // For phonemes, auto-select the first category if not already in a phoneme sub-path
+    if (level === PracticeLevel.Phonemes) {
+      if (!selectedPhonemeCategory) {
+        // This will be handled by the phoneme path view
+      }
+    } else {
+        const data = PRACTICE_DATA[level];
+        if (Array.isArray(data)) {
+           setSelectedItem(data[0]);
+        }
+    }
   };
 
   const handleSelectPhonemeCategory = (category: string) => {
@@ -128,6 +145,9 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
       setView('path');
       setSelectedLevel(null);
     }
+    setScoreResult(null);
+    setUserAudio(null);
+    setError(null);
   }
 
   const renderPracticeItems = () => {
@@ -135,15 +155,15 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
     const data = PRACTICE_DATA[selectedLevel];
 
     if (selectedLevel === PracticeLevel.Phonemes) {
-      if (!selectedPhonemeCategory) return null; // Should not happen here
+      if (!selectedPhonemeCategory) return null;
       
-      const allCategories = (data as PhonemeSuperCategory[]).flatMap(sc => sc.categories);
-      const currentCategory = allCategories.find(c => c.title === selectedPhonemeCategory);
+      const allSuperCategories = data as PhonemeSuperCategory[];
+      const currentCategory = allSuperCategories.flatMap(sc => sc.categories).find(c => c.title === selectedPhonemeCategory);
       if (!currentCategory) return <p>Category not found.</p>;
 
       return (
         <div className="flex flex-wrap gap-2">
-            {(currentCategory.items as PracticeItem[]).map((item, k) => (
+            {(currentCategory.items).map((item, k) => (
                 <button
                     key={k}
                     onClick={() => handleSelectItem(item)}
@@ -201,7 +221,7 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
         allCategories={allPhonemeCategories}
         unlockedCategories={unlockedPhonemeCategories}
         onSelectCategory={handleSelectPhonemeCategory}
-        onBack={() => setView('path')}
+        onBack={() => { setView('path'); setSelectedLevel(null); }}
       />;
     }
 
@@ -227,7 +247,7 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
   
         <section id="practice-area">
           <h2 className="text-2xl font-bold mb-4">开始练习 (Start Practice)</h2>
-          {selectedItem && (
+          {selectedItem && selectedLevel && (
             <PracticeCard
               item={selectedItem}
               isRecording={isRecording}
@@ -236,6 +256,7 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ onLogout
               stopRecording={handleStopRecording}
               userAudioUrl={userAudio?.url ?? null}
               displayMode={selectedLevel === PracticeLevel.Phonemes ? 'ipa_only' : 'default'}
+              level={selectedLevel}
             />
           )}
           {error && <div className="mt-4 text-center text-red-500 bg-red-100 dark:bg-red-900/50 p-3 rounded-lg">{error}</div>}

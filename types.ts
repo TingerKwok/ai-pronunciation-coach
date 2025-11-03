@@ -1,4 +1,4 @@
-// FIX: Removed a circular import of `PracticeLevel` from its own file, which was causing declaration conflicts.
+// FIX: Removed circular self-import of `PracticeLevel` which caused a declaration conflict.
 export enum PracticeLevel {
   Phonemes = 'phonemes',
   Words = 'words',
@@ -11,6 +11,7 @@ export interface PracticeItem {
   ipa: string;
   exampleWord?: string; // Word for AI scoring context, especially for phonemes
   refAudioUrl?: string; // Optional reference audio URL
+  speakableText?: string; // Pre-computed text for TTS to pronounce phonemes
 }
 
 export interface ScoreResult {
