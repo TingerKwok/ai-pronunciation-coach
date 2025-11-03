@@ -57,7 +57,7 @@ export const getPronunciationScore = async (
     };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro', // Use a powerful model for nuanced scoring
+      model: 'gemini-2.5-flash', // Use a faster model for scoring to reduce latency.
       contents: [{ parts: [textPart, audioPart] }],
       config: {
         responseMimeType: "application/json",
