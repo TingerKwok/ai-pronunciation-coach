@@ -68,8 +68,11 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
     setIsRefAudioLoading(true);
 
     try {
+      // FIX: The specialized TTS model expects direct text, not complex instructions.
+      // For phonemes, we now send the example word which contains the target sound.
+      // This provides clear, unambiguous text for the TTS model to synthesize.
       const textToSpeak = displayMode === 'ipa_only' 
-        ? `In a standard British accent, pronounce the phoneme: ${item.ipa}` 
+        ? item.exampleWord || item.ipa // Prioritize the example word for clarity, fallback to IPA symbol
         : item.text;
       
       const base64Audio = await getTextToSpeechAudio(textToSpeak);
