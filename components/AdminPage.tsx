@@ -63,7 +63,8 @@ export const AdminPage: React.FC = () => {
                      <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg max-h-[70vh] overflow-y-auto">
                         {usedCodesCount > 0 ? (
                             <ul className="space-y-3">
-                                {Object.entries(codes.used)
+                                {/* FIX: Explicitly cast the result of Object.entries to ensure correct type inference for sort and map callbacks. */}
+                                {(Object.entries(codes.used) as [string, authService.UsedCodeInfo][])
                                   .sort(([, a], [, b]) => b.activationTimestamp - a.activationTimestamp) // Show most recent first
                                   .map(([code, info]) => (
                                     <li key={code} className="p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm">

@@ -19,15 +19,17 @@ const levelOrder = [PracticeLevel.Phonemes, PracticeLevel.Words, PracticeLevel.P
 export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, onLoginRequest, onLogout }) => {
   const isGuest = user === null;
   const [view, setView] = useState<'path' | 'practice'>('path');
-  const [unlockedLevels, setUnlockedLevels] = useState<PracticeLevel[]>([PracticeLevel.Phonemes]);
+  const [unlockedLevels, setUnlockedLevels] = useState<PracticeLevel[]>(levelOrder); // All levels unlocked
   const [selectedLevel, setSelectedLevel] = useState<PracticeLevel | null>(null);
   
   const allPhonemeCategories = useMemo(() => 
     PRACTICE_DATA[PracticeLevel.Phonemes].flatMap(superCat => superCat.categories.map(cat => cat.title)),
     []
   );
-  const [unlockedPhonemeCategories, setUnlockedPhonemeCategories] = useState<string[]>([allPhonemeCategories[0]]);
+  const [unlockedPhonemeCategories, setUnlockedPhonemeCategories] = useState<string[]>(allPhonemeCategories); // All phoneme categories unlocked
   const [selectedPhonemeCategory, setSelectedPhonemeCategory] = useState<string | null>(null);
+
+  const [unlockedPhonemeItems, setUnlockedPhonemeItems] = useState<Record<string, string[]>>({});
 
   const [selectedItem, setSelectedItem] = useState<PracticeItem | null>(null);
   const [userAudio, setUserAudio] = useState<{ url: string; base64: string; mimeType: string; } | null>(null);
@@ -38,6 +40,21 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, on
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const recordingTimeoutRef = useRef<number | null>(null);
 
+  // Initialize unlocked phoneme items state
+  useEffect(() => {
+    const initialUnlocked: Record<string, string[]> = {};
+    PRACTICE_DATA[PracticeLevel.Phonemes].forEach(superCat => {
+        superCat.categories.forEach(cat => {
+            if (cat.items.length > 0) {
+                // Unlock the first item of each category by default
+                initialUnlocked[cat.title] = [cat.items[0].ipa];
+            } else {
+                initialUnlocked[cat.title] = [];
+            }
+        });
+    });
+    setUnlockedPhonemeItems(initialUnlocked);
+  }, []); // Run only once on mount
 
   // --- Guest Mode State and Logic ---
   const [guestPracticeCount, setGuestPracticeCount] = useState(() => {
@@ -86,37 +103,48 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, on
         const result = await getPronunciationScore(audioData.base64, audioData.mimeType, selectedItem, selectedLevel);
         setScoreResult(result);
 
+        // New phoneme item unlock logic (for ALL users)
+        if (
+            result.score >= 85 &&
+            selectedLevel === PracticeLevel.Phonemes &&
+            selectedPhonemeCategory &&
+            selectedItem
+        ) {
+            const allSuperCategories = PRACTICE_DATA[PracticeLevel.Phonemes] as PhonemeSuperCategory[];
+            const currentCategoryData = allSuperCategories
+              .flatMap(sc => sc.categories)
+              .find(c => c.title === selectedPhonemeCategory);
+      
+            if (currentCategoryData) {
+              const currentItemIndex = currentCategoryData.items.findIndex(
+                item => item.ipa === selectedItem.ipa
+              );
+              if (currentItemIndex > -1 && currentItemIndex < currentCategoryData.items.length - 1) {
+                  const nextItem = currentCategoryData.items[currentItemIndex + 1];
+                  
+                  setUnlockedPhonemeItems(prev => {
+                      const categoryUnlocks = prev[selectedPhonemeCategory] || [];
+                      if (!categoryUnlocks.includes(nextItem.ipa)) {
+                          return {
+                              ...prev,
+                              [selectedPhonemeCategory]: [...categoryUnlocks, nextItem.ipa],
+                          };
+                      }
+                      return prev;
+                  });
+      
+                  // Auto-select next item after a delay to let user see their score
+                  setTimeout(() => {
+                      handleSelectItem(nextItem);
+                  }, 1500);
+              }
+            }
+        }
+
         if (isGuest) {
             const newCount = guestPracticeCount + 1;
             setGuestPracticeCount(newCount);
             localStorage.setItem('guestPracticeCount', newCount.toString());
-        } else {
-            // Unlock logic for registered users
-            if (selectedLevel === PracticeLevel.Phonemes && selectedPhonemeCategory) {
-                const currentIndex = allPhonemeCategories.indexOf(selectedPhonemeCategory);
-                if (currentIndex < allPhonemeCategories.length - 1) {
-                    const nextCategory = allPhonemeCategories[currentIndex + 1];
-                    if (!unlockedPhonemeCategories.includes(nextCategory)) {
-                        setUnlockedPhonemeCategories(prev => [...prev, nextCategory]);
-                    }
-                } else {
-                    const currentMainIndex = levelOrder.indexOf(PracticeLevel.Phonemes);
-                    if (currentMainIndex < levelOrder.length - 1) {
-                        const nextLevel = levelOrder[currentMainIndex + 1];
-                        if (!unlockedLevels.includes(nextLevel)) {
-                            setUnlockedLevels(prev => [...prev, nextLevel]);
-                        }
-                    }
-                }
-            } else if (selectedLevel) {
-                const currentIndex = levelOrder.indexOf(selectedLevel);
-                if (currentIndex < levelOrder.length - 1) {
-                    const nextLevel = levelOrder[currentIndex + 1];
-                    if (!unlockedLevels.includes(nextLevel)) {
-                        setUnlockedLevels(prev => [...prev, nextLevel]);
-                    }
-                }
-            }
         }
 
       } catch (err: any) {
@@ -130,15 +158,19 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, on
   useEffect(() => {
     if (view === 'practice' && selectedLevel && !selectedItem) {
       if (selectedLevel === PracticeLevel.Phonemes && selectedPhonemeCategory) {
-        const superCat = PRACTICE_DATA[PracticeLevel.Phonemes].find(sc => sc.categories.some(c => c.title === selectedPhonemeCategory));
-        const category = superCat?.categories.find(c => c.title === selectedPhonemeCategory);
-        if (category?.items[0]) setSelectedItem(category.items[0]);
+        // Find the first unlocked item in the category and select it.
+        const categoryData = PRACTICE_DATA[PracticeLevel.Phonemes]
+            .flatMap(sc => sc.categories)
+            .find(c => c.title === selectedPhonemeCategory);
+        const unlockedForCategory = unlockedPhonemeItems[selectedPhonemeCategory] || [];
+        const firstUnlocked = categoryData?.items.find(item => unlockedForCategory.includes(item.ipa));
+        if (firstUnlocked) setSelectedItem(firstUnlocked);
       } else if (selectedLevel !== PracticeLevel.Phonemes) {
         const data = PRACTICE_DATA[selectedLevel];
         if(Array.isArray(data)) setSelectedItem(data[0]);
       }
     }
-  }, [view, selectedLevel, selectedPhonemeCategory, selectedItem]);
+  }, [view, selectedLevel, selectedPhonemeCategory, selectedItem, unlockedPhonemeItems]);
 
   const handleSelectItem = (item: PracticeItem) => {
     setSelectedItem(item);
@@ -165,7 +197,28 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, on
       const allSuperCategories = PRACTICE_DATA[PracticeLevel.Phonemes] as PhonemeSuperCategory[];
       const currentCategory = allSuperCategories.flatMap(sc => sc.categories).find(c => c.title === selectedPhonemeCategory);
       if (!currentCategory) return <p>Category not found.</p>;
-      return (<div className="flex flex-wrap gap-2">{(currentCategory.items).map((item, k) => (<button key={k} onClick={() => handleSelectItem(item)} className={`px-3 py-1.5 rounded-md text-sm font-sans transition-colors ${selectedItem?.ipa === item.ipa? 'bg-orange-500 text-white': 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-orange-200 dark:hover:bg-orange-800'}`}>{item.ipa}</button>))}</div>);
+      
+      return (
+        <div className="flex flex-wrap gap-2">
+            {currentCategory.items.map((item, k) => {
+                const isUnlocked = unlockedPhonemeItems[selectedPhonemeCategory]?.includes(item.ipa);
+                return (
+                    <button 
+                        key={k} 
+                        onClick={() => handleSelectItem(item)} 
+                        disabled={!isUnlocked}
+                        className={`px-3 py-1.5 rounded-md text-sm font-sans transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selectedItem?.ipa === item.ipa
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-orange-200 dark:hover:bg-orange-800'
+                        }`}
+                    >
+                        {item.ipa}
+                    </button>
+                );
+            })}
+        </div>
+      );
     }
     
     return (<div className="flex flex-wrap gap-2">{(PRACTICE_DATA[selectedLevel] as PracticeItem[]).map((item, index) => (<button key={index} onClick={() => handleSelectItem(item)} className={`px-4 py-2 rounded-lg text-left transition-colors ${selectedItem?.text === item.text? 'bg-orange-500 text-white': 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-orange-200 dark:hover:bg-orange-800'}`}>{item.text}</button>))}</div>);
@@ -211,7 +264,6 @@ export const PronunciationCoach: React.FC<PronunciationCoachProps> = ({ user, on
           <LevelPath unlockedLevels={unlockedLevels} onSelectLevel={handleSelectLevel} />
         ) : (
           selectedLevel === PracticeLevel.Phonemes && !selectedPhonemeCategory ? (
-            // FIX: Pass the correct state variable `unlockedPhonemeCategories` to the `unlockedCategories` prop.
             <PhonemePath allCategories={allPhonemeCategories} unlockedCategories={unlockedPhonemeCategories} onSelectCategory={handleSelectPhonemeCategory} onBack={() => { setView('path'); setSelectedLevel(null); }} />
           ) : (
             <>
