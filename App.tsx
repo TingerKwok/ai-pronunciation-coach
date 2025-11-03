@@ -3,6 +3,7 @@ import { PronunciationCoach } from './components/PronunciationCoach';
 import { LoginPage } from './components/LoginPage';
 import { VerificationPage } from './components/VerificationPage';
 import { AdminPage } from './components/AdminPage';
+import { WelcomeScreen } from './components/WelcomeScreen'; // Import the new component
 import * as authService from './services/authService';
 import { LoadingIcon } from './components/Icons';
 
@@ -13,6 +14,7 @@ export type User = {
 type View = 'loading' | 'login' | 'verify' | 'app';
 
 function App() {
+  const [isAppStarted, setIsAppStarted] = useState(false); // New state for the welcome screen
   const [user, setUser] = useState<User | null>(null);
   const [isActivated, setIsActivated] = useState(false);
   const [view, setView] = useState<View>('loading');
@@ -76,10 +78,19 @@ function App() {
     // Guest practice count is handled within the coach component.
     setView('app');
   };
+  
+  const handleStartApp = () => {
+    setIsAppStarted(true);
+  }
 
   // Render Admin page if hash matches
   if (hash === '#/admin') {
     return <AdminPage />;
+  }
+
+  // Show welcome screen first
+  if (!isAppStarted) {
+    return <WelcomeScreen onStart={handleStartApp} />;
   }
 
   const renderView = () => {
