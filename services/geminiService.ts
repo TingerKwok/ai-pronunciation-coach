@@ -1,8 +1,15 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { PracticeItem, PracticeLevel, ScoreResult } from '../types';
 
-// FIX: Initialized the Google Gemini AI client using `process.env.API_KEY` to align with the coding guidelines and resolve a TypeScript error.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// FIX: Aligned API key access with guidelines to use `process.env.API_KEY`.
+// This is made available to the client via the `define` property in `vite.config.ts`.
+const apiKey = process.env.API_KEY;
+
+if (!apiKey) {
+  throw new Error("API_KEY is not set. Please add it to your environment variables.");
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 /**
  * Generates text-to-speech audio for the given text.
@@ -18,7 +25,8 @@ export const getTextToSpeechAudio = async (text: string): Promise<string> => {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // A standard, clear voice
+            // Using a standard British accent voice as requested.
+            prebuiltVoiceConfig: { voiceName: 'Fenrir' }, 
           },
         },
       },
@@ -54,7 +62,7 @@ export const getPronunciationScore = async (
   const referenceText = level === PracticeLevel.Phonemes ? item.exampleWord : item.text;
 
   const prompt = `
-    You are an expert English pronunciation coach for native Chinese speakers.
+    You are an expert English pronunciation coach for native Chinese speakers, focusing on a British accent.
     A student is practicing their pronunciation.
     The target is "${referenceText}", with the IPA transcription "${item.ipa}".
     Listen to the student's audio recording and evaluate their pronunciation.
