@@ -1,5 +1,5 @@
 import React from 'react';
-import { PracticeLevel } from '../types';
+import { PracticeLevel, PhonemeSuperCategory } from '../types';
 import { PhonemeIcon, WordIcon, PhraseIcon, SentenceIcon, LockIcon } from './Icons';
 
 interface LevelPathProps {
@@ -43,7 +43,6 @@ export const LevelPath: React.FC<LevelPathProps> = ({ unlockedLevels, onSelectLe
     <div className="w-full max-w-sm mx-auto py-8">
       <h2 className="text-3xl font-bold text-center mb-10 text-gray-800 dark:text-gray-200">学习路径 (Learning Path)</h2>
       <div className="relative">
-        {/* Dotted line connecting the levels */}
         <div className="absolute left-1/2 -translate-x-1/2 top-10 bottom-10 w-1 border-l-2 border-dashed border-gray-300 dark:border-gray-600 -z-10"></div>
         
         <ul className="space-y-16">
@@ -87,9 +86,8 @@ export const LevelPath: React.FC<LevelPathProps> = ({ unlockedLevels, onSelectLe
   );
 };
 
-// New component for Phoneme Sub-levels
 interface PhonemePathProps {
-    allCategories: string[];
+    phonemeData: PhonemeSuperCategory[];
     unlockedCategories: string[];
     onSelectCategory: (category: string) => void;
     onBack: () => void;
@@ -103,37 +101,31 @@ const phonemeCategoryConfig: {[key: string]: { color: string, hover: string }} =
     'Voiced Consonants (浊辅音)': { color: 'bg-indigo-500', hover: 'hover:bg-indigo-600' },
 };
 
-export const PhonemePath: React.FC<PhonemePathProps> = ({ allCategories, unlockedCategories, onSelectCategory, onBack }) => {
+export const PhonemePath: React.FC<PhonemePathProps> = ({ phonemeData, unlockedCategories, onSelectCategory, onBack }) => {
+    const allCategories = phonemeData.flatMap(sup => sup.categories);
+
     return (
         <div className="w-full max-w-sm mx-auto py-8">
-            <div className="relative text-center mb-10">
-                <button
-                    onClick={onBack}
-                    className="absolute left-0 top-1/2 -translate-y-1/2 px-3 py-1 text-sm font-medium text-orange-600 dark:text-orange-400 border border-orange-600 dark:border-orange-400 rounded-md hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                    &larr; 主路径
-                </button>
-                <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-200">音标关卡</h2>
-            </div>
-           
+            <h2 className="text-3xl font-bold text-center mb-10 text-gray-800 dark:text-gray-200">音标关卡</h2>
             <div className="relative">
                 <div className="absolute left-1/2 -translate-x-1/2 top-10 bottom-10 w-1 border-l-2 border-dashed border-gray-300 dark:border-gray-600 -z-10"></div>
-                <ul className="space-y-12">
-                    {allCategories.map((categoryTitle, index) => {
-                        const isUnlocked = unlockedCategories.includes(categoryTitle);
-                        const config = phonemeCategoryConfig[categoryTitle] || { color: 'bg-gray-500', hover: 'hover:bg-gray-600' };
-                        const [title, subtitle] = categoryTitle.split(' (');
+                
+                <ul className="space-y-8">
+                    {allCategories.map((category) => {
+                        const isUnlocked = unlockedCategories.includes(category.title);
+                        const config = phonemeCategoryConfig[category.title] || { color: 'bg-gray-500', hover: 'hover:bg-gray-600' };
+                        const [title, subtitle] = category.title.split(' (');
 
                         return (
-                            <li key={categoryTitle} className={`flex items-center ${index % 2 !== 0 ? 'flex-row-reverse' : ''}`}>
-                                <div className={`flex-1 px-8 ${index % 2 !== 0 ? 'text-left' : 'text-right'}`}>
-                                    <h3 className="font-bold text-md text-gray-800 dark:text-gray-200">{title}</h3>
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm">({subtitle}</p>
+                            <li key={category.title} className="flex items-center">
+                                <div className="flex-1 text-right pr-6">
+                                    <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">{title}</h3>
+                                    <p className="text-gray-500 dark:text-gray-400">({subtitle}</p>
                                 </div>
 
                                 <div className="relative">
                                     <button
-                                        onClick={() => isUnlocked && onSelectCategory(categoryTitle)}
+                                        onClick={() => isUnlocked && onSelectCategory(category.title)}
                                         disabled={!isUnlocked}
                                         className={`w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg transform transition-transform duration-200 ${
                                             isUnlocked
@@ -149,6 +141,8 @@ export const PhonemePath: React.FC<PhonemePathProps> = ({ allCategories, unlocke
                                         )}
                                     </button>
                                 </div>
+                                
+                                <div className="flex-1"></div>
                             </li>
                         );
                     })}
