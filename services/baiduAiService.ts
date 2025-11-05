@@ -67,7 +67,7 @@ export const getTextToSpeechAudio = async (textToSpeak: string): Promise<string>
     ctp: '1',
     cuid: 'baidufree',
     tok: accessToken,
-    per: '5118', // Standard British female
+    per: '5117', // Standard British male
     spd: '5',
     pit: '5',
     vol: '5',
