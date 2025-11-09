@@ -201,15 +201,12 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
 
 
 /**
- * Main Cloudflare Pages function that routes requests to the appropriate handler.
- * It now uses the universal `onRequest` handler for better compatibility.
+ * Main Cloudflare Pages function that routes POST requests to the appropriate handler.
+ * By using `onRequestPost`, we ensure this function only handles POST requests,
+ * which is the expected method for our API endpoints. Other methods will be
+ * correctly rejected by the Cloudflare Pages runtime with a 405 error.
  */
-export const onRequest: PagesFunction = async ({ request, env }) => {
-  // This function now explicitly handles POST requests only.
-  if (request.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
-  }
-
+export const onRequestPost: PagesFunction = async ({ request, env }) => {
   const url = new URL(request.url);
   try {
     const { XUNFEI_APP_ID, XUNFEI_API_KEY, XUNFEI_API_SECRET } = env;
