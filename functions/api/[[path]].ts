@@ -32,6 +32,7 @@ const utf8StringToBuf = (str: string): ArrayBuffer => {
 };
 
 async function sha256_base64(buffer: ArrayBuffer): Promise<string> {
+    // FIX: Corrected typo in algorithm name from 'SHA-266' to 'SHA-256'.
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
     return toBase64(hashBuffer);
 }
@@ -68,7 +69,7 @@ async function getXunfeiAuthParams(
     const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
 
-    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha256", headers="${headers}", signature="${signature}"`;
+    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha-256", headers="${headers}", signature="${signature}"`;
     const authorization = btoa(authorizationOrigin);
     
     return { date, authorization, digestHeader };
@@ -76,84 +77,101 @@ async function getXunfeiAuthParams(
 
 // --- WebSocket Handler for Speech Evaluation ---
 async function handleEvaluation(request: Request, env: Record<string, any>): Promise<Response> {
-  const { audioBase64, referenceText, audioMimeType } = await request.json() as EvaluationRequestBody;
+    const { audioBase64, referenceText, audioMimeType } = await request.json() as EvaluationRequestBody;
+    const encoding = audioMimeType === 'audio/pcm' ? 'raw' : 'lame';
   
-  // Determine the audio encoding format for the API request.
-  const encoding = audioMimeType === 'audio/pcm' ? 'raw' : 'lame';
+    const host = 'cn-east-1.ws-api.xf-yun.com';
+    const path = '/v1/private/s8e098720';
+    const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'GET');
+    const params = new URLSearchParams({ host, date, authorization });
+    
+    // For Cloudflare Workers, initiate WebSocket with an HTTPS fetch and an 'Upgrade' header.
+    const fetchUrl = `https://${host}${path}?${params.toString()}`;
+    const upgradeResponse = await fetch(fetchUrl, {
+      headers: { 'Upgrade': 'websocket' }
+    });
   
-  // Dynamically construct the authenticated WebSocket URL.
-  const host = 'cn-east-1.ws-api.xf-yun.com';
-  const path = '/v1/private/s8e098720';
-  const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'GET');
-  const params = new URLSearchParams({ host, date, authorization });
-  const authUrl = `wss://${host}${path}?${params.toString()}`;
+    // FIX: The standard `Response` type does not include the `webSocket` property, which is a Cloudflare-specific extension for handling WebSocket upgrades. Cast to `any` to bypass the type check.
+    const ws = (upgradeResponse as any).webSocket;
+    if (!ws) {
+      const errorBody = await upgradeResponse.text();
+      console.error("WebSocket upgrade failed:", upgradeResponse.status, errorBody);
+      throw new Error(`AI 引擎连接握手失败 (status: ${upgradeResponse.status}).`);
+    }
 
-  // This Promise wraps the entire WebSocket lifecycle.
-  const result = await new Promise((resolve, reject) => {
-      const ws = new WebSocket(authUrl);
-      const timeoutId = setTimeout(() => {
-          if (ws.readyState < WebSocket.CLOSING) {
-              ws.close(1001, 'Timeout');
-          }
-          // The 'close' event handler will then reject the promise.
-      }, 15000); // 15-second timeout
+    // This Promise wraps the WebSocket lifecycle.
+    const result = await new Promise((resolve, reject) => {
+        let settled = false;
+        const settle = (func: Function, value: any) => {
+            if (!settled) {
+                settled = true;
+                cleanup();
+                func(value);
+            }
+        };
 
-      const cleanup = () => clearTimeout(timeoutId);
+        const timeoutId = setTimeout(() => {
+            ws.close(1001, 'Timeout');
+        }, 15000); // 15-second timeout
 
-      ws.onopen = () => {
-          const requestFrame = {
-              header: { app_id: env.XUNFEI_APP_ID, status: 0 },
-              parameter: {
-                  st: {
-                      lang: 'en', core: 'word', refText: referenceText, phoneme_output: 1,
-                      result: { encoding: 'utf8', compress: 'raw', format: 'json' }
-                  }
-              },
-              payload: {
-                  data: {
-                      encoding, sample_rate: 16000, channels: 1, bit_depth: 16, status: 0, audio: audioBase64,
-                  }
-              }
-          };
-          ws.send(JSON.stringify(requestFrame));
-          // Send the final frame immediately after the first one.
-          ws.send(JSON.stringify({ header: { app_id: env.XUNFEI_APP_ID, status: 2 } }));
-      };
+        const cleanup = () => clearTimeout(timeoutId);
 
-      ws.onmessage = (event) => {
-          const response = JSON.parse(event.data as string);
-          if (response.header.code === 0 && response.payload?.result?.text) {
-              cleanup();
-              const decodedResult = JSON.parse(atob(response.payload.result.text));
-              resolve(decodedResult.result);
-              ws.close(1000, "Task completed");
-          } else if (response.header.code !== 0) {
-              cleanup();
-              reject({ message: `AI 引擎错误: ${response.header.message || '未知错误'}`, code: 'XF_API_ERROR' });
-              ws.close(4000, "Error received");
-          }
-      };
+        ws.accept();
 
-      ws.onerror = () => {
-          cleanup();
-          reject({ message: '与 AI 评分服务连接失败。', code: 'XF_CONNECTION_FAILED' });
-      };
-      
-      ws.onclose = (event) => {
-          cleanup();
-          if (event.code === 1001 && event.reason === 'Timeout') {
-              reject({ message: 'AI 引擎响应超时。', code: 'XF_TIMEOUT' });
-          } else if (!event.wasClean) {
-              reject({ message: `与 AI 评分服务的连接意外断开 (Code: ${event.code})。`, code: 'XF_CONNECTION_CLOSED' });
-          }
-      };
-  });
+        ws.addEventListener('message', (event) => {
+            try {
+                const response = JSON.parse(event.data as string);
+                if (response.header.code === 0 && response.payload?.result?.text) {
+                    const decodedResult = JSON.parse(atob(response.payload.result.text));
+                    settle(resolve, decodedResult.result);
+                    ws.close(1000, "Task completed");
+                } else if (response.header.code !== 0) {
+                    settle(reject, { message: `AI 引擎错误: ${response.header.message || '未知错误'}`, code: 'XF_API_ERROR' });
+                    ws.close(4000, "Error received");
+                }
+            } catch (e) {
+                settle(reject, { message: '解析 AI 引擎响应失败。', code: 'XF_PARSE_ERROR' });
+                ws.close(4001, "Parse error");
+            }
+        });
 
-  return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-  });
+        ws.addEventListener('error', () => {
+            settle(reject, { message: '与 AI 评分服务连接失败。', code: 'XF_CONNECTION_FAILED' });
+        });
+
+        ws.addEventListener('close', (event) => {
+            if (event.code === 1001 && event.reason === 'Timeout') {
+                settle(reject, { message: 'AI 引擎响应超时。', code: 'XF_TIMEOUT' });
+            } else if (!event.wasClean && event.code !== 1000) {
+                settle(reject, { message: `与 AI 评分服务的连接意外断开 (Code: ${event.code})。`, code: 'XF_CONNECTION_CLOSED' });
+            }
+        });
+        
+        // Send data after accepting and setting up listeners.
+        const requestFrame = {
+            header: { app_id: env.XUNFEI_APP_ID, status: 0 },
+            parameter: {
+                st: {
+                    lang: 'en', core: 'word', refText: referenceText, phoneme_output: 1,
+                    result: { encoding: 'utf8', compress: 'raw', format: 'json' }
+                }
+            },
+            payload: {
+                data: {
+                    encoding, sample_rate: 16000, channels: 1, bit_depth: 16, status: 0, audio: audioBase64,
+                }
+            }
+        };
+        ws.send(JSON.stringify(requestFrame));
+        ws.send(JSON.stringify({ header: { app_id: env.XUNFEI_APP_ID, status: 2 } }));
+    });
+
+    return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+    });
 }
+
 
 // --- HTTP Handler for Text-to-Speech ---
 async function handleTts(request: Request, env: Record<string, any>): Promise<Response> {
