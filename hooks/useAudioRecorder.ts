@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import lamejs from 'lamejs';
+import * as lamejs from 'lamejs';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -91,45 +91,52 @@ export const useAudioRecorder = () => {
       }
 
       mediaRecorderRef.current.onstop = async () => {
-        const originalMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-        const audioBlob = new Blob(audioChunksRef.current, { type: originalMimeType });
-        
-        // --- MP3 Encoding Process ---
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
-        // Resample to 16kHz as required by Xunfei API
-        const pcmSamples = resampleBuffer(decodedBuffer, 16000);
+        try {
+            const originalMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunksRef.current, { type: originalMimeType });
+            
+            // --- MP3 Encoding Process ---
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // Resample to 16kHz as required by Xunfei API
+            const pcmSamples = resampleBuffer(decodedBuffer, 16000);
 
-        // Convert Float32 PCM to Int16 PCM
-        const samples = new Int16Array(pcmSamples.length);
-        for (let i = 0; i < pcmSamples.length; i++) {
-            samples[i] = pcmSamples[i] * 32767;
-        }
+            // Convert Float32 PCM to Int16 PCM
+            const samples = new Int16Array(pcmSamples.length);
+            for (let i = 0; i < pcmSamples.length; i++) {
+                samples[i] = pcmSamples[i] * 32767;
+            }
 
-        const mp3encoder = new lamejs.Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
-        const mp3Data = [];
-        const sampleBlockSize = 1152;
-        for (let i = 0; i < samples.length; i += sampleBlockSize) {
-            const sampleChunk = samples.subarray(i, i + sampleBlockSize);
-            const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+            const mp3encoder = new lamejs.Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
+            const mp3Data = [];
+            const sampleBlockSize = 1152;
+            for (let i = 0; i < samples.length; i += sampleBlockSize) {
+                const sampleChunk = samples.subarray(i, i + sampleBlockSize);
+                const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+            }
+            const mp3buf = mp3encoder.flush();
             if (mp3buf.length > 0) {
                 mp3Data.push(mp3buf);
             }
-        }
-        const mp3buf = mp3encoder.flush();
-        if (mp3buf.length > 0) {
-            mp3Data.push(mp3buf);
-        }
 
-        const mp3Blob = new Blob(mp3Data.map(d => new Uint8Array(d)), { type: 'audio/mpeg' });
-        const audioUrl = URL.createObjectURL(mp3Blob);
-        const base64 = await blobToBase64(mp3Blob);
-        
-        setIsRecording(false);
-        mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-        resolve({ url: audioUrl, base64, mimeType: 'audio/mpeg' });
+            const mp3Blob = new Blob(mp3Data.map(d => new Uint8Array(d.buffer, d.byteOffset, d.byteLength)), { type: 'audio/mpeg' });
+            const audioUrl = URL.createObjectURL(mp3Blob);
+            const base64 = await blobToBase64(mp3Blob);
+            
+            resolve({ url: audioUrl, base64, mimeType: 'audio/mpeg' });
+        } catch (error) {
+            console.error("Error during MP3 encoding:", error);
+            // Resolve with null or an error state if encoding fails
+            resolve(null);
+        } finally {
+            setIsRecording(false);
+            mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+        }
       };
 
       mediaRecorderRef.current.stop();

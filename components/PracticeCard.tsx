@@ -112,6 +112,7 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
     };
     audio.onerror = (e) => {
       console.error("Audio playback error:", e);
+      alert('音频播放失败，请检查网络或浏览器设置。');
       setIsPlayingRef(false);
     }
     
@@ -163,6 +164,13 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
           <p className="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100 break-words">{item.text}</p>
           {item.ipa !== item.text && (
             <p className="text-2xl text-gray-500 dark:text-gray-400 mt-2 font-mono">{item.ipa}</p>
+          )}
+          {item.exampleWord && (
+            <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <p className="text-lg text-gray-600 dark:text-gray-300">
+                    请朗读单词: <strong className="font-semibold text-orange-600 dark:text-orange-400">{item.exampleWord}</strong>
+                </p>
+            </div>
           )}
         </div>
         

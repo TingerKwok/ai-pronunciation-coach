@@ -87,11 +87,11 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
 
       ws.addEventListener('message', (event) => {
           const response = JSON.parse(event.data as string);
-          if (response.header.code === 0) {
+          if (response.header.code === 0 && response.payload.result.text) {
               const decodedResult = JSON.parse(atob(response.payload.result.text));
               resolve(decodedResult.result);
           } else {
-              reject(new Error(`AI 引擎错误: ${response.header.message}`));
+              reject(new Error(`AI 引擎错误: ${response.header.message || '未知错误'}`));
           }
           ws.close();
       });
@@ -121,15 +121,26 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
     const ttsRequestBody = {
         header: { app_id: env.XUNFEI_APP_ID },
         parameter: {
-            // Use British English voice 'Abby'
-            // Other options: Catherine (US Female), Henry (US Male) etc.
-            // aue=lame for MP3 format, auf=audio/L16;rate=16000 for raw pcm
-            synthesis: { ent: 'en_vip',vcn: 'abby', auf: 'audio/L16;rate=16000', aue: 'lame' }
+            // Use British English voice 'Abby' for standard pronunciation.
+            // aue: 'lame' specifies MP3 output, which is widely compatible.
+            synthesis: { ent: 'en_vip', vcn: 'abby', aue: 'lame', tte: 'UTF8' }
         },
         payload: {
-            text: { encoding: 'UTF8', status: 2, text: btoa(text) }
+            text: {
+                // Text needs to be Base64 encoded for the Xunfei TTS API payload.
+                encoding: 'UTF8',
+                status: 2,
+                text: btoa(new TextEncoder().encode(text).toString())
+            }
         }
     };
+    
+    // The text in the payload must be base64 encoded.
+    const textToEncode = text;
+    const utf8Encoder = new TextEncoder();
+    const encodedText = utf8Encoder.encode(textToEncode);
+    ttsRequestBody.payload.text.text = toBase64(encodedText.buffer);
+
 
     const response = await fetch(ttsUrl, {
         method: 'POST',
@@ -145,7 +156,7 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
     const responseData = await response.json();
     
     if (responseData.header.code !== 0) {
-        throw new Error(`音频合成失败: ${responseData.header.message}`);
+        throw new Error(`音频合成失败 (${responseData.header.code}): ${responseData.header.message}`);
     }
 
     return new Response(JSON.stringify({ audioBase64: responseData.payload.audio.audio }), {
