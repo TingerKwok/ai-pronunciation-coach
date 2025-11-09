@@ -76,3 +76,15 @@ export type PracticeData = {
   [PracticeLevel.Phrases]: PracticeItem[];
   [PracticeLevel.Sentences]: PracticeItem[];
 };
+
+
+// --- NEW Types for Backend Proxy Requests ---
+export interface EvaluationRequestBody {
+  audioBase64: string;
+  audioMimeType: string;
+  referenceText: string;
+}
+
+export interface TtsRequestBody {
+  text: string;
+}

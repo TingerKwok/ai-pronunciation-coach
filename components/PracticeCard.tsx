@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PracticeItem, PracticeLevel, EvaluationResult } from '../types';
 import { SpeakerIcon, MicIcon, StopIcon, LoadingIcon } from './Icons';
 import { ScoreDisplay } from './ScoreDisplay';
-// The baiduAiService is no longer needed here as TTS fallback is removed.
+import * as xunfeiService from '../services/xunfeiService';
 
 interface PracticeCardProps {
   item: PracticeItem;
@@ -40,19 +40,7 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   const [isPlayingRef, setIsPlayingRef] = useState(false);
   const [isRefAudioLoading, setIsRefAudioLoading] = useState(false);
   const refAudioRef = useRef<HTMLAudioElement | null>(null);
-  const blobUrlRef = useRef<string | null>(null); // To store blob URL for cleanup
-
-  // Cleanup effect for when the component unmounts
-  useEffect(() => {
-    return () => {
-      if (refAudioRef.current) {
-          refAudioRef.current.pause();
-      }
-      if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current);
-      }
-    };
-  }, []);
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
 
   // Effect to stop audio and clean up when the practice item changes
   useEffect(() => {
@@ -60,12 +48,20 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
         refAudioRef.current.pause();
         refAudioRef.current.src = '';
     }
-    if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-    }
     setIsPlayingRef(false);
   }, [item]);
+  
+  // Cleanup audio resources on component unmount
+  useEffect(() => {
+    const audioCache = audioCacheRef.current;
+    return () => {
+      if (refAudioRef.current) {
+          refAudioRef.current.pause();
+      }
+      // Revoke all created blob URLs to prevent memory leaks
+      audioCache.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   const handlePlayReferenceAudio = async () => {
     if (isPlayingRef) {
@@ -74,49 +70,60 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
       return;
     }
 
-    // Clean up previous blob URL if it exists from a previous play
-    if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
+    const cacheKey = item.speakableText || item.text;
+    
+    if (audioCacheRef.current.has(cacheKey)) {
+        const audioSrc = audioCacheRef.current.get(cacheKey)!;
+        playAudio(audioSrc);
+        return;
     }
 
     setIsRefAudioLoading(true);
-    const audioPath: string | undefined = item.refAudioUrl;
-
     try {
-        // The logic now only handles local audio files, as the TTS fallback is no longer needed.
-        if (!audioPath) {
-            throw new Error("No reference audio URL provided for this item.");
-        }
-
-        const response = await fetch(audioPath);
-        if (!response.ok) {
-            throw new Error(`File not found or server error: ${response.status} ${response.statusText}`);
-        }
-        const audioBlob = await response.blob();
+        const textToSpeak = item.speakableText || item.text;
+        const audioBase64 = await xunfeiService.getTtsAudio(textToSpeak);
+        
+        // Convert base64 to blob and create a URL
+        const audioBlob = await (await fetch(`data:audio/mpeg;base64,${audioBase64}`)).blob();
         const audioSrc = URL.createObjectURL(audioBlob);
-        blobUrlRef.current = audioSrc; // Store for cleanup
         
-        if (!refAudioRef.current) {
-            refAudioRef.current = new Audio();
-        }
-        const audio = refAudioRef.current;
+        // Store in cache
+        audioCacheRef.current.set(cacheKey, audioSrc);
         
-        audio.onended = () => {
-          setIsPlayingRef(false);
-        };
-        
-        audio.src = audioSrc;
-        await audio.play();
-        setIsPlayingRef(true);
-
-    } catch (err) {
-        console.error(`Failed to play reference audio. Ensure the file path '${audioPath}' is correct and the file is served properly.`, err);
+        playAudio(audioSrc);
+    } catch (err: any) {
+        console.error(`Failed to play reference audio via TTS:`, err);
+        // Display the specific error from the service to the user.
+        alert(`无法播放示范音频: ${err.message}`);
         setIsPlayingRef(false);
     } finally {
         setIsRefAudioLoading(false);
     }
   };
+
+  const playAudio = async (src: string) => {
+    if (!refAudioRef.current) {
+        refAudioRef.current = new Audio();
+    }
+    const audio = refAudioRef.current;
+    
+    audio.onended = () => {
+      setIsPlayingRef(false);
+    };
+    audio.onerror = (e) => {
+      console.error("Audio playback error:", e);
+      setIsPlayingRef(false);
+    }
+    
+    audio.src = src;
+    try {
+      await audio.play();
+      setIsPlayingRef(true);
+    } catch(err) {
+      console.error("Failed to play audio:", err);
+      setIsPlayingRef(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto">

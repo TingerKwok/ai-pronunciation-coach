@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PracticeLevel, PracticeItem, EvaluationResult, PhonemeSuperCategory } from '../types';
 import { PRACTICE_DATA } from '../constants';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import * as baiduAiService from '../services/baiduAiService';
+import * as xunfeiService from '../services/xunfeiService';
 
 import { PhonemePath } from './LevelPath';
 import { PracticeCard } from './PracticeCard';
@@ -81,7 +81,7 @@ export const PronunciationCoach: React.FC = () => {
       setLoadingMessage('专业 AI 引擎正在分析您的发音...');
       try {
         const currentItem = practiceItems[currentItemIndex];
-        const result = await baiduAiService.getPronunciationScore(
+        const result = await xunfeiService.getPronunciationScore(
           audioData.base64,
           audioData.mimeType,
           currentItem,

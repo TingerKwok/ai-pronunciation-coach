@@ -1,5 +1,5 @@
-
 import { useState, useRef } from 'react';
+import lamejs from 'lamejs';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -15,6 +15,36 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+};
+
+// Helper function to resample audio buffer to a target sample rate (e.g., 16kHz)
+const resampleBuffer = (audioBuffer: AudioBuffer, targetSampleRate: number): Float32Array => {
+    const sourceData = audioBuffer.getChannelData(0);
+    const sourceSampleRate = audioBuffer.sampleRate;
+
+    if (sourceSampleRate === targetSampleRate) {
+        return sourceData;
+    }
+
+    const ratio = sourceSampleRate / targetSampleRate;
+    const newLength = Math.round(sourceData.length / ratio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetSource = 0;
+
+    while (offsetResult < newLength) {
+        const nextSourceOffset = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetSource; i < nextSourceOffset && i < sourceData.length; i++) {
+            accum += sourceData[i];
+            count++;
+        }
+        result[offsetResult] = count > 0 ? accum / count : 0;
+        offsetResult++;
+        offsetSource = nextSourceOffset;
+    }
+    return result;
 };
 
 
@@ -33,7 +63,10 @@ export const useAudioRecorder = () => {
         throw new Error('Media Devices API not supported in this browser.');
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        // Request 16kHz sample rate, though browser may not respect it
+        sampleRate: 16000 
+    }});
     const mediaRecorder = new MediaRecorder(stream);
     mediaRecorderRef.current = mediaRecorder;
     audioChunksRef.current = [];
@@ -58,14 +91,45 @@ export const useAudioRecorder = () => {
       }
 
       mediaRecorderRef.current.onstop = async () => {
-        const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const base64 = await blobToBase64(audioBlob);
+        const originalMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: originalMimeType });
+        
+        // --- MP3 Encoding Process ---
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Resample to 16kHz as required by Xunfei API
+        const pcmSamples = resampleBuffer(decodedBuffer, 16000);
+
+        // Convert Float32 PCM to Int16 PCM
+        const samples = new Int16Array(pcmSamples.length);
+        for (let i = 0; i < pcmSamples.length; i++) {
+            samples[i] = pcmSamples[i] * 32767;
+        }
+
+        const mp3encoder = new lamejs.Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
+        const mp3Data = [];
+        const sampleBlockSize = 1152;
+        for (let i = 0; i < samples.length; i += sampleBlockSize) {
+            const sampleChunk = samples.subarray(i, i + sampleBlockSize);
+            const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+            if (mp3buf.length > 0) {
+                mp3Data.push(mp3buf);
+            }
+        }
+        const mp3buf = mp3encoder.flush();
+        if (mp3buf.length > 0) {
+            mp3Data.push(mp3buf);
+        }
+
+        const mp3Blob = new Blob(mp3Data.map(d => new Uint8Array(d)), { type: 'audio/mpeg' });
+        const audioUrl = URL.createObjectURL(mp3Blob);
+        const base64 = await blobToBase64(mp3Blob);
         
         setIsRecording(false);
         mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-        resolve({ url: audioUrl, base64, mimeType });
+        resolve({ url: audioUrl, base64, mimeType: 'audio/mpeg' });
       };
 
       mediaRecorderRef.current.stop();
