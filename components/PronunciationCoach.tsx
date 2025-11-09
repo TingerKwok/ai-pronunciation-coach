@@ -75,26 +75,27 @@ export const PronunciationCoach: React.FC = () => {
   };
 
   const handleStopRecording = async () => {
-    const audioData = await stopRecording();
-    if (audioData) {
-      setIsLoading(true);
+    setIsLoading(true);
+    setLoadingMessage('正在处理您的录音...');
+    try {
+      const audioData = await stopRecording();
+      
       setLoadingMessage('专业 AI 引擎正在分析您的发音...');
-      try {
-        const currentItem = practiceItems[currentItemIndex];
-        const result = await xunfeiService.getPronunciationScore(
-          audioData.base64,
-          audioData.mimeType,
-          currentItem,
-          PracticeLevel.Phonemes // 硬编码为音标练习
-        );
-        setScore(result);
-      } catch (err: any)
-      {
-        setError(err.message || '评分时发生错误。');
-      } finally {
-        setIsLoading(false);
-        setLoadingMessage('');
-      }
+      const currentItem = practiceItems[currentItemIndex];
+      const result = await xunfeiService.getPronunciationScore(
+        audioData.base64,
+        audioData.mimeType,
+        currentItem,
+        PracticeLevel.Phonemes // 硬编码为音标练习
+      );
+      setScore(result);
+      setError(null); // Clear previous errors on success
+    } catch (err: any) {
+      setError(err.message || '评分时发生错误。');
+      setScore(null); // Clear previous scores on error
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
     }
   };
 

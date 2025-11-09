@@ -97,11 +97,11 @@ export const useAudioRecorder = () => {
     mediaRecorder.start();
   };
 
-  const stopRecording = (): Promise<{ url: string; base64: string; mimeType: string; } | null> => {
-    return new Promise((resolve) => {
+  const stopRecording = (): Promise<{ url: string; base64: string; mimeType: string; }> => {
+    return new Promise((resolve, reject) => {
       if (!mediaRecorderRef.current || !isRecording) {
         console.warn('Recording not started or already stopped.');
-        resolve(null);
+        reject(new Error('录音尚未开始或已停止。'));
         return;
       }
 
@@ -138,7 +138,7 @@ export const useAudioRecorder = () => {
             }
         } catch (error) {
             console.error("Error during audio processing:", error);
-            resolve(null);
+            reject(new Error('处理录音时出错，您的浏览器可能录制了不支持的音频格式。'));
         } finally {
             setIsRecording(false);
             mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
