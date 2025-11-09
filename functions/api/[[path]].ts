@@ -27,17 +27,32 @@ const utf8StringToBuf = (str: string): ArrayBuffer => {
     return new TextEncoder().encode(str).buffer;
 };
 
+async function sha256_base64(buffer: ArrayBuffer): Promise<string> {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return toBase64(hashBuffer);
+}
+
 // --- Xunfei Authentication Logic ---
 
 async function getXunfeiAuthParams(
   env: Record<string, any>, 
   host: string, 
   path: string, 
-  method: 'GET' | 'POST' = 'GET'
-): Promise<{ date: string; authorization: string }> {
+  method: 'GET' | 'POST' = 'GET',
+  body?: string
+): Promise<{ date: string; authorization: string; digestHeader?: string }> {
     const date = new Date().toUTCString();
-    const requestLine = `${method} ${path} HTTP/1.1`;
-    const signatureOrigin = `host: ${host}\ndate: ${date}\n${requestLine}`;
+    let signatureOrigin = `host: ${host}\ndate: ${date}\n${method} ${path} HTTP/1.1`;
+    let headers = 'host date request-line';
+    let digestHeader: string | undefined = undefined;
+
+    // For POST requests with a body, a digest must be included in the signature.
+    if (method === 'POST' && body) {
+        const bodyDigest = await sha256_base64(utf8StringToBuf(body));
+        digestHeader = `SHA-256=${bodyDigest}`;
+        signatureOrigin += `\ndigest: ${digestHeader}`;
+        headers += ' digest';
+    }
 
     const secretKey = env.XUNFEI_API_SECRET;
     const cryptoKey = await crypto.subtle.importKey(
@@ -46,10 +61,10 @@ async function getXunfeiAuthParams(
     const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
 
-    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
+    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha256", headers="${headers}", signature="${signature}"`;
     const authorization = btoa(authorizationOrigin);
     
-    return { date, authorization };
+    return { date, authorization, digestHeader };
 }
 
 // --- WebSocket Handler for Speech Evaluation ---
@@ -58,7 +73,7 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
   
   const host = 'cn-east-1.ws-api.xf-yun.com';
   const path = '/v1/private/s8e098720';
-  const { date, authorization } = await getXunfeiAuthParams(env, host, path);
+  const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'GET');
 
   const params = new URLSearchParams({ host, date, authorization });
   const authUrl = `wss://${host}${path}?${params.toString()}`;
@@ -68,7 +83,7 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
 
       ws.addEventListener('open', () => {
           const requestFrame = {
-              header: { app_id: env.XUNFEI_APP_ID, status: 2 },
+              header: { app_id: env.XUNFEI_APP_ID, status: 0 }, // status 0 for start frame
               parameter: {
                   st: {
                       lang: 'en', core: 'word', refText: referenceText, phoneme_output: 1,
@@ -78,22 +93,27 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
               payload: {
                   data: {
                       encoding: 'lame', sample_rate: 16000, channels: 1, bit_depth: 16,
-                      status: 2, audio: audioBase64
+                      status: 0, // status 0 for start frame
+                      audio: audioBase64,
                   }
               }
           };
+          // The API expects data in chunks, but for short audio, we can send start and end frames back-to-back.
           ws.send(JSON.stringify(requestFrame));
+          // Send end frame
+          ws.send(JSON.stringify({ header: { app_id: env.XUNFEI_APP_ID, status: 2 } }));
       });
 
       ws.addEventListener('message', (event) => {
           const response = JSON.parse(event.data as string);
-          if (response.header.code === 0 && response.payload.result.text) {
+          if (response.header.code === 0 && response.payload?.result?.text) {
               const decodedResult = JSON.parse(atob(response.payload.result.text));
               resolve(decodedResult.result);
-          } else {
+              ws.close(1000, "Task completed");
+          } else if (response.header.code !== 0) {
               reject(new Error(`AI 引擎错误: ${response.header.message || '未知错误'}`));
+              ws.close(4000, "Error received");
           }
-          ws.close();
       });
 
       ws.addEventListener('error', () => reject(new Error('与 AI 评分服务连接失败。')));
@@ -114,49 +134,46 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
 
     const host = 'tts-api.xfyun.cn';
     const path = '/v2/tts';
-    const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'POST');
-
-    const ttsUrl = `https://${host}${path}`;
-
+    
     const ttsRequestBody = {
         header: { app_id: env.XUNFEI_APP_ID },
         parameter: {
-            // Use British English voice 'Abby' for standard pronunciation.
-            // aue: 'lame' specifies MP3 output, which is widely compatible.
             synthesis: { ent: 'en_vip', vcn: 'abby', aue: 'lame', tte: 'UTF8' }
         },
         payload: {
             text: {
-                // Text needs to be Base64 encoded for the Xunfei TTS API payload.
                 encoding: 'UTF8',
                 status: 2,
-                text: btoa(new TextEncoder().encode(text).toString())
+                text: toBase64(utf8StringToBuf(text))
             }
         }
     };
-    
-    // The text in the payload must be base64 encoded.
-    const textToEncode = text;
-    const utf8Encoder = new TextEncoder();
-    const encodedText = utf8Encoder.encode(textToEncode);
-    ttsRequestBody.payload.text.text = toBase64(encodedText.buffer);
+    const bodyString = JSON.stringify(ttsRequestBody);
 
+    const { date, authorization, digestHeader } = await getXunfeiAuthParams(env, host, path, 'POST', bodyString);
+
+    const ttsUrl = `https://${host}${path}`;
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Host': host,
+        'Date': date,
+        'Authorization': authorization
+    };
+    if (digestHeader) {
+        headers['Digest'] = digestHeader;
+    }
 
     const response = await fetch(ttsUrl, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Host': host,
-            'Date': date,
-            'Authorization': authorization
-        },
-        body: JSON.stringify(ttsRequestBody)
+        headers: headers,
+        body: bodyString
     });
 
     const responseData = await response.json();
     
-    if (responseData.header.code !== 0) {
-        throw new Error(`音频合成失败 (${responseData.header.code}): ${responseData.header.message}`);
+    if (responseData.header?.code !== 0) {
+        throw new Error(`音频合成失败 (${responseData.header?.code || 'N/A'}): ${responseData.header?.message || '未知错误'}`);
     }
 
     return new Response(JSON.stringify({ audioBase64: responseData.payload.audio.audio }), {

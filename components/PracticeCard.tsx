@@ -168,7 +168,7 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
           {item.exampleWord && (
             <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
                 <p className="text-lg text-gray-600 dark:text-gray-300">
-                    请朗读单词: <strong className="font-semibold text-orange-600 dark:text-orange-400">{item.exampleWord}</strong>
+                    请朗读单词测评发音: <strong className="font-semibold text-orange-600 dark:text-orange-400">{item.exampleWord}</strong>
                 </p>
             </div>
           )}

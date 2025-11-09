@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import * as lamejs from 'lamejs';
+import { Mp3Encoder } from 'lamejs';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -109,7 +109,7 @@ export const useAudioRecorder = () => {
                 samples[i] = pcmSamples[i] * 32767;
             }
 
-            const mp3encoder = new lamejs.Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
+            const mp3encoder = new Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
             const mp3Data = [];
             const sampleBlockSize = 1152;
             for (let i = 0; i < samples.length; i += sampleBlockSize) {
