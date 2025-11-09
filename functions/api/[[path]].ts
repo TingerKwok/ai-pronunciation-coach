@@ -32,7 +32,6 @@ const utf8StringToBuf = (str: string): ArrayBuffer => {
 };
 
 async function sha256_base64(buffer: ArrayBuffer): Promise<string> {
-    // FIX: Corrected typo in algorithm name from 'SHA-266' to 'SHA-256'.
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
     return toBase64(hashBuffer);
 }
