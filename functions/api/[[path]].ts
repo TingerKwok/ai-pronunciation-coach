@@ -71,7 +71,7 @@ async function getXunfeiAuthParams(
         false, 
         ['sign']
     );
-    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, utf8StringToBuf(signatureOrigin));
+    const signatureBuffer = await crypto.subtle.sign({ name: 'HMAC' }, cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
 
     const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha-256", headers="${headers}", signature="${signature}"`;
