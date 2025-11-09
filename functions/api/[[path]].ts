@@ -64,7 +64,12 @@ async function getXunfeiAuthParams(
 
     const secretKey = env.XUNFEI_API_SECRET;
     const cryptoKey = await crypto.subtle.importKey(
-        'raw', utf8StringToBuf(secretKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+        'raw', 
+        utf8StringToBuf(secretKey), 
+        // FIX: The hash algorithm for HMAC must be specified as an object in some JS environments like Cloudflare Workers, not a string.
+        { name: 'HMAC', hash: { name: 'SHA-256' } }, 
+        false, 
+        ['sign']
     );
     const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
