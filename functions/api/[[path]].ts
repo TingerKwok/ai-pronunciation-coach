@@ -40,13 +40,15 @@ async function sha256_base64(buffer: ArrayBuffer): Promise<string> {
 
 /**
  * Generates the required authentication headers for Xunfei HTTP/WebSocket APIs.
+ * Supports both HMAC-SHA1 and HMAC-SHA256 algorithms.
  */
 async function getXunfeiAuthParams(
   env: Record<string, any>, 
   host: string, 
   path: string, 
   method: 'GET' | 'POST' = 'GET',
-  body?: string
+  body?: string,
+  algorithm: 'sha1' | 'sha256' = 'sha256'
 ): Promise<{ date: string; authorization: string; digestHeader?: string }> {
     const date = new Date().toUTCString();
     let signatureOrigin = `host: ${host}\ndate: ${date}\n${method} ${path} HTTP/1.1`;
@@ -54,6 +56,7 @@ async function getXunfeiAuthParams(
     let digestHeader: string | undefined = undefined;
 
     // For POST requests with a body, a digest must be included in the signature.
+    // The HTTP Digest header standard is typically SHA-256, even if the signature HMAC is different.
     if (method === 'POST' && body) {
         const bodyDigest = await sha256_base64(utf8StringToBuf(body));
         digestHeader = `SHA-256=${bodyDigest}`;
@@ -62,24 +65,27 @@ async function getXunfeiAuthParams(
     }
 
     const secretKey = env.XUNFEI_API_SECRET;
+
+    const hashAlgoName = algorithm === 'sha1' ? 'SHA-1' : 'SHA-256';
+    const authAlgoString = algorithm === 'sha1' ? 'hmac-sha1' : 'hmac-sha256';
+
     const cryptoKey = await crypto.subtle.importKey(
         'raw', 
         utf8StringToBuf(secretKey), 
-        { name: 'HMAC', hash: { name: 'SHA-256' } }, 
+        { name: 'HMAC', hash: { name: hashAlgoName } }, 
         false, 
         ['sign']
     );
-
-    // FIX: The algorithm for `sign` must be fully specified in the Cloudflare environment.
-    // An ambiguous `{ name: 'HMAC' }` can fail; it must be `{ name: 'HMAC', hash: 'SHA-256' }`.
-    const signatureBuffer = await crypto.subtle.sign({ name: 'HMAC', hash: 'SHA-256' }, cryptoKey, utf8StringToBuf(signatureOrigin));
+    
+    const signatureBuffer = await crypto.subtle.sign({ name: 'HMAC', hash: hashAlgoName }, cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
 
-    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha-256", headers="${headers}", signature="${signature}"`;
+    const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="${authAlgoString}", headers="${headers}", signature="${signature}"`;
     const authorization = btoa(authorizationOrigin);
     
     return { date, authorization, digestHeader };
 }
+
 
 // --- WebSocket Handler for Speech Evaluation ---
 async function handleEvaluation(request: Request, env: Record<string, any>): Promise<Response> {
@@ -88,7 +94,8 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
   
     const host = 'cn-east-1.ws-api.xf-yun.com';
     const path = '/v1/private/s8e098720';
-    const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'GET');
+    // Use HMAC-SHA1 for this older WebSocket-based evaluation service.
+    const { date, authorization } = await getXunfeiAuthParams(env, host, path, 'GET', undefined, 'sha1');
     const params = new URLSearchParams({ host, date, authorization });
     
     // For Cloudflare Workers, initiate WebSocket with an HTTPS fetch and an 'Upgrade' header.
@@ -203,7 +210,8 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
         }
     });
 
-    const { date, authorization, digestHeader } = await getXunfeiAuthParams(env, host, path, 'POST', ttsRequestBody);
+    // Use HMAC-SHA256 for the modern v2 TTS service.
+    const { date, authorization, digestHeader } = await getXunfeiAuthParams(env, host, path, 'POST', ttsRequestBody, 'sha256');
     
     const headers: Record<string, string> = {
         'Content-Type': 'application/json', 'Host': host, 'Date': date, 'Authorization': authorization
