@@ -73,7 +73,9 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
     setIsPlayingRef(false); // Reset state
 
     try {
-      const response = await fetch(item.refAudioUrl);
+      // Construct an absolute URL to prevent SPA routing issues on deployed pages.
+      const absoluteUrl = new URL(item.refAudioUrl, window.location.origin).href;
+      const response = await fetch(absoluteUrl);
 
       if (!response.ok) {
         throw new Error(`无法找到音频文件 (HTTP ${response.status})。请检查 public 文件夹中的路径是否正确。`);
@@ -97,8 +99,8 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
       refAudioRef.current = audio;
 
       audio.onended = () => setIsPlayingRef(false);
-      audio.onerror = () => {
-        console.error(`Audio playback error for blob URL.`);
+      audio.onerror = (e) => {
+        console.error(`Audio playback error for blob URL.`, e);
         alert('播放已加载的音频时出错。');
         setIsPlayingRef(false);
       };
