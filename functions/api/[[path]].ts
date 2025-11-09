@@ -157,7 +157,12 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
             header: { app_id: env.XUNFEI_APP_ID, status: 0 },
             parameter: {
                 st: {
-                    lang: 'en', core: 'word', refText: referenceText, phoneme_output: 1,
+                    lang: 'en',
+                    core: 'word',
+                    dict_type: 'IPA88',      // Use IPA88 for better compatibility with British English
+                    dict_dialect: 'en_br',   // Set to British English
+                    refText: referenceText,
+                    phoneme_output: 1,
                     result: { encoding: 'utf8', compress: 'raw', format: 'json' }
                 }
             },
@@ -188,7 +193,7 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
     const ttsRequestBody = JSON.stringify({
         header: { app_id: env.XUNFEI_APP_ID },
         parameter: {
-            tts: { ent: 'en_vip', vcn: 'abby', aue: 'lame', tte: 'UTF8' }
+            tts: { ent: 'en_vip', vcn: 'catherine', aue: 'lame', tte: 'UTF8' } // 'catherine' is a British female voice
         },
         payload: {
             text: {
