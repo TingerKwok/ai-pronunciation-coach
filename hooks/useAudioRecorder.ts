@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import { Mp3Encoder } from 'lamejs';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -95,7 +94,7 @@ export const useAudioRecorder = () => {
             const originalMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
             const audioBlob = new Blob(audioChunksRef.current, { type: originalMimeType });
             
-            // --- MP3 Encoding Process ---
+            // --- RAW PCM Processing ---
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
             const arrayBuffer = await audioBlob.arrayBuffer();
             const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -106,31 +105,17 @@ export const useAudioRecorder = () => {
             // Convert Float32 PCM to Int16 PCM
             const samples = new Int16Array(pcmSamples.length);
             for (let i = 0; i < pcmSamples.length; i++) {
-                samples[i] = pcmSamples[i] * 32767;
+                const s = Math.max(-1, Math.min(1, pcmSamples[i]));
+                samples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            const mp3encoder = new Mp3Encoder(1, 16000, 128); // 1 channel, 16000 sample rate, 128 bit rate
-            const mp3Data = [];
-            const sampleBlockSize = 1152;
-            for (let i = 0; i < samples.length; i += sampleBlockSize) {
-                const sampleChunk = samples.subarray(i, i + sampleBlockSize);
-                const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
-                if (mp3buf.length > 0) {
-                    mp3Data.push(mp3buf);
-                }
-            }
-            const mp3buf = mp3encoder.flush();
-            if (mp3buf.length > 0) {
-                mp3Data.push(mp3buf);
-            }
-
-            const mp3Blob = new Blob(mp3Data.map(d => new Uint8Array(d.buffer, d.byteOffset, d.byteLength)), { type: 'audio/mpeg' });
-            const audioUrl = URL.createObjectURL(mp3Blob);
-            const base64 = await blobToBase64(mp3Blob);
+            const pcmBlob = new Blob([samples.buffer], { type: 'audio/pcm' });
+            const audioUrl = URL.createObjectURL(pcmBlob);
+            const base64 = await blobToBase64(pcmBlob);
             
-            resolve({ url: audioUrl, base64, mimeType: 'audio/mpeg' });
+            resolve({ url: audioUrl, base64, mimeType: 'audio/pcm' });
         } catch (error) {
-            console.error("Error during MP3 encoding:", error);
+            console.error("Error during PCM processing:", error);
             // Resolve with null or an error state if encoding fails
             resolve(null);
         } finally {

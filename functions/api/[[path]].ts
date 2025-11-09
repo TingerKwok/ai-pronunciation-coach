@@ -69,7 +69,8 @@ async function getXunfeiAuthParams(
 
 // --- WebSocket Handler for Speech Evaluation ---
 async function handleEvaluation(request: Request, env: Record<string, any>): Promise<Response> {
-  const { audioBase64, referenceText } = await request.json() as EvaluationRequestBody;
+  const { audioBase64, referenceText, audioMimeType } = await request.json() as EvaluationRequestBody;
+  const encoding = audioMimeType === 'audio/mpeg' ? 'lame' : 'raw';
   
   const host = 'cn-east-1.ws-api.xf-yun.com';
   const path = '/v1/private/s8e098720';
@@ -92,7 +93,8 @@ async function handleEvaluation(request: Request, env: Record<string, any>): Pro
               },
               payload: {
                   data: {
-                      encoding: 'lame', sample_rate: 16000, channels: 1, bit_depth: 16,
+                      encoding: encoding,
+                      sample_rate: 16000, channels: 1, bit_depth: 16,
                       status: 0, // status 0 for start frame
                       audio: audioBase64,
                   }
@@ -138,7 +140,7 @@ async function handleTts(request: Request, env: Record<string, any>): Promise<Re
     const ttsRequestBody = {
         header: { app_id: env.XUNFEI_APP_ID },
         parameter: {
-            synthesis: { ent: 'en_vip', vcn: 'abby', aue: 'lame', tte: 'UTF8' }
+            tts: { ent: 'en_vip', vcn: 'abby', aue: 'lame', tte: 'UTF8' }
         },
         payload: {
             text: {
