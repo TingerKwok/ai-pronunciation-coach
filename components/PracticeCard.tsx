@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PracticeItem, PracticeLevel, EvaluationResult } from '../types';
 import { SpeakerIcon, MicIcon, StopIcon, LoadingIcon } from './Icons';
 import { ScoreDisplay } from './ScoreDisplay';
-import { getTtsAudio } from '../services/xunfeiService';
 
 interface PracticeCardProps {
   item: PracticeItem;
@@ -21,16 +20,6 @@ interface PracticeCardProps {
   onBack: () => void;
 }
 
-const base64ToBlob = (base64: string, mimeType: string): Blob => {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
-};
-
 export const PracticeCard: React.FC<PracticeCardProps> = ({
   item,
   level,
@@ -48,75 +37,61 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   onBack,
 }) => {
   const [isPlayingRef, setIsPlayingRef] = useState(false);
-  const [isLoadingAudio, setIsLoadingAudio] = useState(false); // State to prevent multiple audio requests
   const refAudioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null); // To store and revoke the blob URL
 
-  // Clean up audio resources when the item changes or component unmounts
+  // When the practice item changes, stop any currently playing audio.
   useEffect(() => {
+    if (refAudioRef.current) {
+      refAudioRef.current.pause();
+      setIsPlayingRef(false);
+    }
+    // This effect ensures audio from a previous item doesn't continue playing.
     return () => {
       if (refAudioRef.current) {
         refAudioRef.current.pause();
         refAudioRef.current = null;
       }
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-        audioUrlRef.current = null;
-      }
     };
   }, [item]);
 
-  const handlePlayReferenceAudio = async () => {
+  const handlePlayReferenceAudio = () => {
+    // If audio is currently playing, pause it and reset.
     if (isPlayingRef && refAudioRef.current) {
       refAudioRef.current.pause();
+      refAudioRef.current.currentTime = 0;
       setIsPlayingRef(false);
       return;
     }
-    
-    const textToSpeak = item.speakableText || item.exampleWord || item.text;
-    if (!textToSpeak) {
-        alert('此项目没有可用于生成示范音频的文本。');
-        return;
+
+    // Ensure there's a local audio file URL to play.
+    if (!item.refAudioUrl) {
+      alert('此项目没有提供示范音频文件。');
+      return;
     }
 
-    if (isLoadingAudio) return; // Prevent double-clicks
-
-    setIsLoadingAudio(true);
-    setIsPlayingRef(false); // Reset state
-
-    try {
-      // Use the TTS service to generate audio dynamically, avoiding static file issues.
-      const audioBase64 = await getTtsAudio(textToSpeak);
-      const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg'); // Xunfei TTS returns MP3 ('lame')
-
-      // Clean up previous audio URL if it exists
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-      }
-      
-      const newAudioUrl = URL.createObjectURL(audioBlob);
-      audioUrlRef.current = newAudioUrl;
-      
-      const audio = new Audio(newAudioUrl);
+    // Use the existing audio element if it's for the same URL, otherwise create a new one.
+    if (refAudioRef.current && refAudioRef.current.src.endsWith(item.refAudioUrl)) {
+      refAudioRef.current.play().catch(e => console.error("Audio playback failed", e));
+    } else {
+      const audio = new Audio(item.refAudioUrl);
       refAudioRef.current = audio;
 
-      audio.onended = () => setIsPlayingRef(false);
+      audio.onplaying = () => setIsPlayingRef(true);
+      audio.onpause = () => setIsPlayingRef(false);
+      audio.onended = () => {
+        setIsPlayingRef(false);
+        audio.currentTime = 0; // Reset for next play
+      };
       audio.onerror = (e) => {
-        console.error(`Audio playback error for TTS audio.`, e);
-        alert('播放示范音频时出错。');
+        console.error(`Error playing audio file: ${item.refAudioUrl}`, e);
+        alert('播放示范音频时出错。请检查 public 文件夹中的文件是否存在。');
         setIsPlayingRef(false);
       };
 
-      await audio.play();
-      setIsPlayingRef(true);
-
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '加载示范音频时发生未知错误。';
-      console.error("Failed to fetch or play TTS audio:", err);
-      alert(message);
-      setIsPlayingRef(false);
-    } finally {
-      setIsLoadingAudio(false);
+      audio.play().catch(e => {
+        console.error("Audio playback failed", e);
+        setIsPlayingRef(false);
+      });
     }
   };
 
@@ -172,11 +147,11 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
         <div className="mt-8 flex justify-center items-center gap-12">
             <button
                 onClick={handlePlayReferenceAudio}
-                disabled={isRecording || isLoadingAudio}
+                disabled={isRecording}
                 className="flex items-center gap-2 text-lg font-semibold text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 transition-colors disabled:opacity-50"
             >
-                {isLoadingAudio ? <LoadingIcon className="w-6 h-6"/> : <SpeakerIcon className="w-6 h-6"/>}
-                <span>{isLoadingAudio ? '加载中...' : '听示范'}</span>
+                <SpeakerIcon className="w-6 h-6"/>
+                <span>{isPlayingRef ? '暂停' : '听示范'}</span>
             </button>
             <button
                 onClick={isRecording ? onStopRecording : onStartRecording}
