@@ -19,9 +19,6 @@ interface PracticeCardProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onBack: () => void;
-  isGuest: boolean;
-  guestPracticeCount: number;
-  guestPracticeLimit: number;
 }
 
 export const PracticeCard: React.FC<PracticeCardProps> = ({
@@ -39,9 +36,6 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   onStartRecording,
   onStopRecording,
   onBack,
-  isGuest,
-  guestPracticeCount,
-  guestPracticeLimit
 }) => {
   const [isPlayingRef, setIsPlayingRef] = useState(false);
   const [isRefAudioLoading, setIsRefAudioLoading] = useState(false);
@@ -162,12 +156,6 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 sm:p-8">
         <h3 className="text-xl font-semibold text-center text-gray-700 dark:text-gray-300 mb-6">开始练习 (Start Practice)</h3>
-
-        {isGuest && (
-            <div className="text-center mb-4 text-sm text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/50 p-2 rounded-md">
-                游客模式: 剩余 {guestPracticeLimit - guestPracticeCount} / {guestPracticeLimit} 次练习机会。
-            </div>
-        )}
         
         <div className="text-center">
           <p className="text-5xl md:text-6xl font-bold text-gray-800 dark:text-gray-100 break-words">{item.text}</p>

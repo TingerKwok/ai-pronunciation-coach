@@ -1,4 +1,5 @@
-import { User } from '../App';
+// Fix: Import User from types.ts instead of App.tsx
+import { User } from '../types';
 
 const CURRENT_USER_KEY = 'pronunciation_coach_user';
 const ACTIVATED_USERS_KEY = 'pronunciation_coach_activated_users';

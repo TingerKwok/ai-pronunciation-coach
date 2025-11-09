@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import * as authService from '../services/authService';
-import { User } from '../App';
+// Fix: Import User from types.ts instead of App.tsx
+import { User } from '../types';
 import { LoadingIcon } from './Icons';
 
 interface LoginPageProps {

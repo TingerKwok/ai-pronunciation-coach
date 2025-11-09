@@ -90,7 +90,7 @@ interface PhonemePathProps {
     phonemeData: PhonemeSuperCategory[];
     unlockedCategories: string[];
     onSelectCategory: (category: string) => void;
-    onBack: () => void;
+    onBack?: () => void;
 }
 
 const phonemeCategoryConfig: {[key: string]: { color: string, hover: string }} = {
@@ -101,7 +101,7 @@ const phonemeCategoryConfig: {[key: string]: { color: string, hover: string }} =
     'Voiced Consonants (浊辅音)': { color: 'bg-indigo-500', hover: 'hover:bg-indigo-600' },
 };
 
-export const PhonemePath: React.FC<PhonemePathProps> = ({ phonemeData, unlockedCategories, onSelectCategory, onBack }) => {
+export const PhonemePath: React.FC<PhonemePathProps> = ({ phonemeData, unlockedCategories, onSelectCategory }) => {
     const allCategories = phonemeData.flatMap(sup => sup.categories);
 
     return (
