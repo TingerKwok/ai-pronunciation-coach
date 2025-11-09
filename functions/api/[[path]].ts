@@ -65,12 +65,14 @@ async function getXunfeiAuthParams(
     const cryptoKey = await crypto.subtle.importKey(
         'raw', 
         utf8StringToBuf(secretKey), 
-        // FIX: The hash algorithm for HMAC must be specified as an object in some JS environments like Cloudflare Workers, not a string.
         { name: 'HMAC', hash: { name: 'SHA-256' } }, 
         false, 
         ['sign']
     );
-    const signatureBuffer = await crypto.subtle.sign({ name: 'HMAC' }, cryptoKey, utf8StringToBuf(signatureOrigin));
+
+    // FIX: The algorithm for `sign` must be fully specified in the Cloudflare environment.
+    // An ambiguous `{ name: 'HMAC' }` can fail; it must be `{ name: 'HMAC', hash: 'SHA-256' }`.
+    const signatureBuffer = await crypto.subtle.sign({ name: 'HMAC', hash: 'SHA-256' }, cryptoKey, utf8StringToBuf(signatureOrigin));
     const signature = toBase64(signatureBuffer);
 
     const authorizationOrigin = `api_key="${env.XUNFEI_API_KEY}", algorithm="hmac-sha-256", headers="${headers}", signature="${signature}"`;
