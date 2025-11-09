@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PracticeItem, PracticeLevel, EvaluationResult } from '../types';
 import { SpeakerIcon, MicIcon, StopIcon, LoadingIcon } from './Icons';
 import { ScoreDisplay } from './ScoreDisplay';
-import * as xunfeiService from '../services/xunfeiService';
 
 interface PracticeCardProps {
   item: PracticeItem;
@@ -38,9 +37,7 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   onBack,
 }) => {
   const [isPlayingRef, setIsPlayingRef] = useState(false);
-  const [isRefAudioLoading, setIsRefAudioLoading] = useState(false);
   const refAudioRef = useRef<HTMLAudioElement | null>(null);
-  const audioCacheRef = useRef<Map<string, string>>(new Map());
 
   // Effect to stop audio and clean up when the practice item changes
   useEffect(() => {
@@ -53,13 +50,10 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
   
   // Cleanup audio resources on component unmount
   useEffect(() => {
-    const audioCache = audioCacheRef.current;
     return () => {
       if (refAudioRef.current) {
           refAudioRef.current.pause();
       }
-      // Revoke all created blob URLs to prevent memory leaks
-      audioCache.forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
 
@@ -70,61 +64,31 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
       return;
     }
 
-    const cacheKey = item.speakableText || item.text;
-    
-    if (audioCacheRef.current.has(cacheKey)) {
-        const audioSrc = audioCacheRef.current.get(cacheKey)!;
-        playAudio(audioSrc);
+    if (!item.refAudioUrl) {
+        alert('此项目没有示范音频。');
         return;
     }
 
-    setIsRefAudioLoading(true);
-    try {
-        const textToSpeak = item.speakableText || item.text;
-        const audioBase64 = await xunfeiService.getTtsAudio(textToSpeak);
-        
-        // Convert base64 to blob and create a URL
-        const audioBlob = await (await fetch(`data:audio/mpeg;base64,${audioBase64}`)).blob();
-        const audioSrc = URL.createObjectURL(audioBlob);
-        
-        // Store in cache
-        audioCacheRef.current.set(cacheKey, audioSrc);
-        
-        playAudio(audioSrc);
-    } catch (err: any) {
-        console.error(`Failed to play reference audio via TTS:`, err);
-        // Display the specific error from the service to the user.
-        alert(`无法播放示范音频: ${err.message}`);
-        setIsPlayingRef(false);
-    } finally {
-        setIsRefAudioLoading(false);
-    }
-  };
-
-  const playAudio = async (src: string) => {
     if (!refAudioRef.current) {
         refAudioRef.current = new Audio();
+        refAudioRef.current.onended = () => setIsPlayingRef(false);
+        refAudioRef.current.onerror = (e) => {
+            console.error("Audio playback error:", e);
+            alert('音频播放失败，请检查文件是否存在或网络连接。');
+            setIsPlayingRef(false);
+        };
     }
-    const audio = refAudioRef.current;
-    
-    audio.onended = () => {
-      setIsPlayingRef(false);
-    };
-    audio.onerror = (e) => {
-      console.error("Audio playback error:", e);
-      alert('音频播放失败，请检查网络或浏览器设置。');
-      setIsPlayingRef(false);
-    }
-    
-    audio.src = src;
+
+    refAudioRef.current.src = item.refAudioUrl;
     try {
-      await audio.play();
-      setIsPlayingRef(true);
-    } catch(err) {
-      console.error("Failed to play audio:", err);
-      setIsPlayingRef(false);
+        await refAudioRef.current.play();
+        setIsPlayingRef(true);
+    } catch (err) {
+        console.error("Failed to play audio:", err);
+        setIsPlayingRef(false);
+        alert('音频播放被浏览器阻止。请与页面交互后重试。');
     }
-  }
+  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -177,10 +141,10 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({
         <div className="mt-8 flex justify-center items-center gap-12">
             <button
                 onClick={handlePlayReferenceAudio}
-                disabled={isRefAudioLoading || isRecording}
+                disabled={isRecording}
                 className="flex items-center gap-2 text-lg font-semibold text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 transition-colors disabled:opacity-50"
             >
-                {isRefAudioLoading ? <LoadingIcon className="w-6 h-6"/> : <SpeakerIcon className="w-6 h-6"/>}
+                <SpeakerIcon className="w-6 h-6"/>
                 <span>听示范</span>
             </button>
             <button

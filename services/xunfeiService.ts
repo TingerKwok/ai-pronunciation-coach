@@ -10,7 +10,11 @@ export const getPronunciationScore = async (
   level: PracticeLevel
 ): Promise<EvaluationResult> => {
     const url = `/api/evaluation`;
-    const referenceText = level === PracticeLevel.Phonemes ? item.exampleWord || item.text : item.text;
+    let referenceText = level === PracticeLevel.Phonemes ? item.exampleWord || item.text : item.text;
+
+    // Xunfei's engine might perform better if the text is explicitly marked as a word.
+    // This can help prevent processing timeouts.
+    referenceText = `[word]${referenceText}`;
 
     const requestBody = {
         audioBase64,
